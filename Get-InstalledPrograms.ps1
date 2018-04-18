@@ -7,27 +7,15 @@
         [string[]]$ComputerName = $env:COMPUTERNAME,
         [switch]$All,
         [string[]]$ComputersListPath = '.\computerNames.txt'
-        #[regex]$Filter = "([A-Za-zА-Яа-я])\w"
     )
-
-    <#
-    $ScriptBlock = 
-            {                
-                Write-Verbose "Working with $computer"
-                $winVer = Get-CimInstance -Class win32_computersystem -ComputerName $computer
-                Invoke-Command -ComputerName $computer -ScriptBlock {
-                Get-ItemProperty HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | 
-                Where-Object {$_.displayname -ne '`n'} | 
-                Sort-Object -Property displayname} -ErrorAction SilentlyContinue
-                Write-Verbose "Done with $computer"
-            }
-    #>
 
     #$programs = Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object {$_.DisplayName -notmatch "microsoft"} | Select-Object displayname, displayversion | Format-Table -AutoSize
     Begin
     {
         [string]$RegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
         [string]$RegPathWow6432Node = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+
+        #Internet Explorer info is located in "HKLM:\Software\Microsoft\Internet Explorer". Property - Version (or svcVersion?)
     }
     Process
     {
@@ -102,40 +90,6 @@
 #Select-Object displayname, displayversion | 
 #Format-Table -AutoSize} >.\programsList.txt
 
-function global:Get-OnlinePCs{
-    [CmdletBinding(
-    DefaultParameterSetName = "PCsList")]
-    PARAM(
-        [Parameter(Position = 0, ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
-        [Alias("List, ComputerName")]
-        [string[]]$PCsList,
-        [switch]$OutFile,
-        [string]$OutFilePath
-    )
-
-    Begin
-    {
-    }
-    Process
-    {
-        $ComputerObject = New-Object psobject
-        $ComputerObject | Add-Member -MemberType NoteProperty -Name ComputerName -Value $_
-        if (Test-Connection -ComputerName $ComputerObject.ComputerName -Count 1 -ErrorAction SilentlyContinue){
-            Write-Verbose "$ComputerObject is online."
-            $ComputerObject | Add-Member -MemberType NoteProperty -Name Online -Value $true
-            #Add-Content -Value $computer -Path .\onlineComputers.txt
-        }
-        else {
-            Write-Verbose "$ComputerObject is not online."
-            $ComputerObject | Add-Member -MemberType NoteProperty -Name Online -Value $false
-        }
-        return $ComputerObject
-    }
-    End
-    {
-
-    }
-}
 #{
 #    foreach($computer in $computers){
 #        if (Test-Connection -ComputerName $computer -Count 1 -ErrorAction SilentlyContinue){
