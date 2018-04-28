@@ -17,9 +17,9 @@ if($response -eq "1")
                 New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -PropertyType string -ErrorAction SilentlyContinue
 
                 Write-Host "Setting new values..."
-                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Пароль после погашения экрана. 1 - есть, 0 - нет.
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Password after the screen turns off. 1 - yes, 0 - no.
                 Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value 322 #Время бездействия до погашения экрана в секундах.
-                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1    #Погашение экрана. 1 - включено.
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1 
             }
             cmd /c powercfg -change -monitor-timeout-ac 5 #В минутах. Почему-то.
             cmd /c powercfg -change -standby-timeout-ac 0 #Отключает время для сна.
@@ -48,20 +48,18 @@ elseif($response -eq "2")
 
                 if($args[1])
                 {
-                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 1 #Пароль после погашения экрана. 1 - есть, 0 - нет.
+                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 1 #Password after the screen turns off. 1 - yes, 0 - no.
                 }
                 else
                 {
-                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Пароль после погашения экрана. 1 - есть, 0 - нет.
+                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Password after the screen turns off. 1 - yes, 0 - no.
                 }
-                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value ($args[0]*60) #Время бездействия до погашения экрана в секундах.
-                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1    #Погашение экрана. 1 - включено.
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value ($args[0]*60) #Time until the screen turns off.
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1 
             }
             cmd /c powercfg -change -monitor-timeout-ac $args[0] #В минутах. Почему-то.
-            cmd /c powercfg -change -standby-timeout-ac 0 #Отключает время для сна.
+            cmd /c powercfg -change -standby-timeout-ac 0 #turns off the time until the pc goes to sleep
             Write-Host Done. Timer has been set to $args[0] minutes.
         } -ArgumentList $time, $pass
     }
 }
-
-#i3925-w34000113 индивидуально поставить выключение монитора через 10 минут.
