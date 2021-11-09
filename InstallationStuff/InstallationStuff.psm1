@@ -390,16 +390,6 @@ function global:Install-App{
     }
 }
 
-function GetTempFolderName{
-    param(
-        [string]$FilePath
-    )
-
-    $hash = Get-FileHash -Path $FilePath -Algorithm MD5
-
-    return "install-$($hash)"
-}
-
 function global:New-ServiceFolder{
     [CmdletBinding()]
     param(
@@ -509,4 +499,133 @@ function global:Get-MSIFileInfo{
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($WindowsInstaller) | Out-Null
         [System.GC]::Collect()
     }
+}
+
+<#
+.SYNOPSIS
+    Short description
+.DESCRIPTION
+    Long description
+.EXAMPLE
+    PS C:\> <example usage>
+    Explanation of what the example does
+.INPUTS
+    Inputs (if any)
+.OUTPUTS
+    Output (if any)
+.NOTES
+    General notes
+#>
+function global:Deploy-Package {
+    [CmdletBinding()]
+    param (
+        [string]$PackagePath,
+        [Parameter(ValueFromPipelineByPropertyName = $true)]
+        [Alias("computer", "pc", "name")]
+        [string[]]$ComputerName = $env:COMPUTERNAME,
+        [string]$Arguments,
+        [switch]$CopyWithFolder,
+        [switch]$Cleanup,
+        [switch]$Legacy,
+        [switch]$AsJob
+    )
+    
+    begin {
+        [scriptblock]$jobScriptBlock = {
+            param(
+                # Parameter help description
+                [Parameter(Mandatory = $true)]
+                [psobject]
+                $metadata
+            )
+
+            $session = New-PSSession -ComputerName $metadata.ComputerName -ErrorVariable sessionError
+            
+            if($sessionError){
+                continue;
+            }
+
+            $tempFile = Invoke-Command -Session $session -ScriptBlock {New-TemporaryFile}
+            $destinationPath = New-Item -Path "\\$($PSSession.ComputerName)\admin$\temp" -Name $tempFile.BaseName -ItemType Directory
+
+            $PackagePath = Get-Item $metadata.PackagePath
+            if($metadata.CopyWithFolder){
+                Copy-Item -Path $PackagePath.DirectoryName -Destination $destinationPath -Recurse -Force
+            }
+            else{
+                Copy-Item -Path $PackagePath -Destination $destinationPath -Force
+            }
+
+            #if msi and Arguments is empty, then install-package
+            #else start-process $filePath -argumentList $arguments
+            [scriptblock]$toExecute;
+            [string]$fileLocalPath = "C:\Windows\Temp\$($destinationPath.BaseName)\$($PackagePath.Name)"
+
+            if ($metadata.Legacy) {
+                $toExecute = {
+                    Start-Process -FilePath msiexec.exe -ArgumentList "/i $($args[0]) /q" -Wait -NoNewWindow
+                }
+            }
+            elseif($metadata.Arguments -eq [string]::Empty -and $PackagePath.Extension -eq ".msi"){
+                $toExecute = {
+                    Install-Package $($args[0]) -Force
+                }
+            }
+            else{
+                $toExecute = {
+                    Start-Process -FilePath $($args[0]) -ArgumentList $($args[1]) -Wait -NoNewWindow
+                }
+            }
+
+            Write-Verbose $fileLocalPath
+            Write-Verbose $toExecute.ToString()
+            
+            $result = Invoke-Command -Session $session -ScriptBlock $toExecute -ArgumentList $fileLocalPath, $metadata.Arguments
+
+            Write-Output $result
+        }
+    }
+    
+    process {
+        foreach($pc in $ComputerName){
+            $meta = [PSCustomObject]@{
+                ComputerName = $pc
+                PackagePath = $PackagePath
+                Arguments = $Arguments
+                Legacy = $Legacy
+                CopyWithFolder = $CopyWithFolder
+            }
+            if($AsJob){
+                Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $meta
+            }
+            else{
+                Invoke-Command -ScriptBlock $jobScriptBlock -ArgumentList $meta
+            }
+        }
+    }
+    
+    end {
+        
+    }
+}
+
+function global:CreateTempFolder {
+    param (
+        [System.Management.Automation.Runspaces.PSSession]$PSSession
+    )
+    Write-Verbose "Creating a folder on $($PSSession.ComputerName)"
+    $tempFile = Invoke-Command -Session $PSSession -ScriptBlock {New-TemporaryFile}
+    $destinationPath = New-Item -Path "\\$($PSSession.ComputerName)\admin$\temp" -Name $tempFile.BaseName -ItemType Directory
+    Write-Verbose "Folder name is $($destinationPath.BaseName)"
+    Write-Output $destinationPath
+}
+
+function GetTempFolderName{
+    param(
+        [string]$FilePath
+    )
+
+    $hash = Get-FileHash -Path $FilePath -Algorithm MD5
+
+    return "install-$($hash)"
 }

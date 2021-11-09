@@ -447,54 +447,6 @@ function global:Format-ProcessEvents{ #pass a Get-WinEvent entries to this cmdle
     }
 }
 
-function global:Install-MsiPackage{
-    [CmdletBinding(DefaultParameterSetName = "ComputerName")]
-    PARAM(
-        [Parameter(Position = 0, ValueFromPipelineByPropertyName = $True, HelpMessage = "Computers list.")]
-        [Alias("PcName", "Computer")]
-        [string]$ComputerName,
-        [string]$PackagePath,
-        #[switch]$Log,
-        [string]$LogPath="C:\FkuServiceFolder\",
-        [string]$LogFile="LogFile.log",
-        [switch]$AsJob,
-        [switch]$Clear
-    )
-
-    Begin
-    {
-        $tempIndex = $PackagePath.LastIndexOf('\') + 1
-
-        Write-Verbose "Package path: $PackagePath"
-
-        $packageName = $PackagePath.ToString().Substring($tempIndex)
-
-        Write-Verbose "Package name: $packageName"
-    }
-    Process
-    {
-        $customObj = New-Object psobject
-        $customObj | Add-Member -MemberType NoteProperty -Name PackageName -Value $packageName.Substring(0, $packageName.LastIndexOf('.'))
-
-        Write-Verbose "Copying the msi file to the service folder..."
-        Copy-Item -Path $PackagePath -Destination \\$ComputerName\c$\FkuServiceFolder -Force
-        Write-Verbose "Done with the copying."
-        Write-Verbose "Starting the installation. Log file is $($LogPath + $LogFile)"
-        Invoke-Command -ComputerName $ComputerName -ScriptBlock {Start-Process msiexec.exe -ArgumentList "/i c:\fkuservicefolder\$($args[0]) /quiet /l* $($args[1])" -Wait} -ArgumentList $packageName, ($LogPath + $LogFile)
-        Write-Verbose "Job's done."
-        if($Clear){
-            Remove-Item "\\$ComputerName\c$\FkuServiceFolder\$packageName"
-            Write-Verbose "Msi file has been deleted."
-        }
-
-        return $customObj
-    }
-    End
-    {
-        
-    }
-}
-
 function global:Install-MsuPackage{
     #[CmdletBinding(HelpMessage = "Installs an msu (microsoft update) on a remote computer using built-in tools wusa.exe and dism.exe")]
     PARAM(
@@ -506,7 +458,7 @@ function global:Install-MsuPackage{
         [string]$PackagePath,
         [switch]$Log,
         [switch]$AsJob
-        #[string]$LogPath="C:\FkuServiceFolder\MSUpdate\",
+        #[string]$LogPath="C:\ServiceFolder\MSUpdate\",
         #[string]$LogFile="UpdateLog.log"
     )
 
@@ -520,7 +472,7 @@ function global:Install-MsuPackage{
             )
             $cabRegEx = "(Windows.*KB\d*.*\.cab)"
             $packageName = $PackagePath.Substring($PackagePath.LastIndexOf('\') + 1)
-            $serviceFolder = "C:\FkuServiceFolder"
+            $serviceFolder = "C:\ServiceFolder"
 
             $session = New-PSSession -ComputerName $ComputerName -ErrorVariable sessionError
             if($sessionError){
@@ -528,7 +480,7 @@ function global:Install-MsuPackage{
                 continue
             }
             $packageName = (Get-Item $PackagePath).Name
-            Copy-Item -Path $PackagePath -Destination \\$ComputerName\c$\fkuservicefolder #$serviceFolder -ToSession $session -Force
+            Copy-Item -Path $PackagePath -Destination \\$ComputerName\c$\ServiceFolder
             
             Invoke-Command -Session $session -ScriptBlock {Start-Process wusa.exe -ArgumentList "$($args[0])\$($args[1]) /extract:$($args[0])\MSUpdate\" -Wait} -ArgumentList $serviceFolder, $packageName
 
@@ -560,78 +512,10 @@ function global:Install-MsuPackage{
                 Invoke-Command -ScriptBlock $msuSB -ArgumentList $ComputerName, $PackagePath, $Log
             }
         }
-        #copy -> extract -> install all cab files (asjob?) -> remove
-        <#if($Log)
-        {
-            Copy-Item -Path $PackagePath -Destination \\$ComputerName\C$\fkuservicefolder -Force -PassThru
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock {Start-Process wusa.exe -ArgumentList "$using:serviceFolder\$using:packageName /extract:$using:serviceFolder\MSUpdate\" -Wait}
-            Write-Verbose "Starting to install the .cab files from the service folder: $serviceFolder"
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock {
-                $cabFiles = Get-ChildItem $using:serviceFolder\MSUpdate | ?{($_.Name -match $using:cabRegEx) -and ($_.Name -notmatch "log")}
-                foreach ($cab in $cabFiles)
-                {
-                    Write-Verbose "cab file: $($cab.FullName)"
-                    Start-Process dism.exe -ArgumentList "/online /add-package /PackagePath:$($cab.FullName) /quiet /norestart /logpath:$($cab.FullName).log /loglevel:2" -Wait -PassThru
-                }
-                $cabFiles | Remove-Item -Force
-            }
-        }
-        else
-        {
-            Copy-Item -Path $PackagePath -Destination \\$ComputerName\c$\fkuservicefolder -Force
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock {Start-Process wusa.exe -ArgumentList "$using:serviceFolder\$using:packageName /extract:$using:serviceFolder\MSUpdate\" -Wait}
-            Write-Verbose "Starting to install the .cab files from the service folder: $serviceFolder"
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock {
-                $cabFiles = Get-ChildItem $using:serviceFolder\MSUpdate | ?{($_.Name -match $using:cabRegEx) -and ($_.Name -notmatch "log")}
-                foreach ($cab in $cabFiles)
-                {
-                    Write-Verbose "cab file: $($cab.FullName)"
-                    Start-Process dism.exe -ArgumentList "/online /add-package /PackagePath:$($cab.FullName) /quiet /norestart" -Wait -PassThru
-                }
-                $cabFiles | Remove-Item -Force
-            }
-        }#>
     }
     End
     {
         
-    }
-}
-
-function global:Send-Message{
-    [CmdletBinding(DefaultParameterSetName = "ComputerName")]
-    PARAM(
-    [Parameter(Position = 0, ValueFromPipeline = $True, HelpMessage = "Computers list.")]
-    [string[]]$ComputerName,
-    [Parameter(Position = 1, HelpMessage = "Message that you want to send to computers.")]
-    [string]$Message,
-    [Int32]$Time = 1800
-    )
-    Begin
-    {
-        <#[System.Windows.Forms.MessageBoxButtons] $buttons = [System.Windows.Forms.MessageBoxButtons]::OK
-        $icon = [System.Windows.Forms.MessageBoxIcon]::Information
-        $defbutton = [System.Windows.Forms.MessageBoxDefaultButton]::Button1
-        $options = [System.Windows.Forms.MessageBoxOptions]::RtlReading#>
-    }
-    Process
-    {
-        #can't do this shit because of the security 
-        #Invoke-Command -ComputerName $ComputerName -ScriptBlock {[System.Windows.Forms.MessageBox]::Show($using:Message, $using:Title, $using:buttons, $using:icon, $using:defbutton, $using:options)}
-        foreach($pc in $ComputerName){
-            Write-Verbose "Sending a message to $ComputerName..."
-            $messageJob = Invoke-Command -ComputerName $pc -ScriptBlock {
-                cmd /c msg * /time:$($args[0]) $($args[1])
-            } -ArgumentList $Time, $Message -AsJob
-            Write-Verbose "Created a new job: $($messageJob.Name)"
-            #$messageEvent = Register-ObjectEvent -InputObject $messageJob -EventName StateChanged -Action {$messageJob | Remove-Job -Force; $messageEvent | Unregister-Event -Force | Remove-Event}
-            #Write-Verbose "Created a new event: $messageEvent"
-            return $messageJob
-        }
-    }
-    End
-    {
-
     }
 }
 
@@ -720,53 +604,6 @@ function global:Set-ScreenSaverTimer{
         }
     }
     End{}
-}
-
-function global:Set-SleepTimer{ #this bs doesn't work
-    param(
-        [string[]]$ComputerName,
-        [Parameter(Mandatory = $true)]
-        [int]$Seconds,
-        [switch]$AsJob,
-        [switch]$Credential
-    )
-    Begin{
-        [scriptblock]$sb = {
-            param(
-                [string]$pcName
-            )
-            $session = New-PSSession -ComputerName $pcName -ErrorAction SilentlyContinue -ErrorVariable sessionError -Credential (Get-Credential)
-            if($sessionError){
-                Write-Host "Couldn't create a PSSession. $pcName"
-                continue
-            }
-            Invoke-Command -Session $session -ScriptBlock {
-                $guidString = powercfg /list | Select-String -Pattern "GUID.*\*"
-                $powercfgQuery = powercfg /query
-                $subGUIDString = $powercfgQuery | Select-String -Pattern "GUID подгрупп.*(\([Сс]он\))"
-                $subsubGUIDString = $powercfgQuery | Select-String -Pattern "GUID настройки.*(\([Сс]он после\))"
-                [RegEx]$guidRegex = "([a-z0-9]+-){4}([a-z0-9]+)"
-                $schemeGUID = $guidRegex.Match($guidString).Value
-                $subGUID = $guidRegex.Match($subGUIDString).Value
-                $subsubGUID = $guidRegex.Match($subsubGUIDString).Value
-                powercfg -setacvalueindex $schemeGUID $subGUID $subsubGUID 0
-            }
-            $session | Remove-PSSession
-        }
-    }
-    Process{
-        foreach($pc in $ComputerName){
-            if($AsJob){
-                Start-Job -ScriptBlock $sb -ArgumentList $pc
-            }
-            else{
-                Invoke-Command -ScriptBlock $sb -ArgumentList $pc
-            }
-        }
-    }
-    End{
-
-    }
 }
 
 <#
