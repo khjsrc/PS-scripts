@@ -1,42 +1,54 @@
-﻿function global:Get-PowerShellVersion{
+﻿function global:Get-PowerShellVersion {
     [CmdletBinding()]
     param(
         [string[]]$ComputerName = $env:COMPUTERNAME
     )
-    Begin{
+    Begin {
         
     }
-    Process{
-        foreach($pc in $ComputerName){
-            $version = Invoke-Command -ComputerName $pc -ScriptBlock {$PSVersionTable.PSVersion} -ErrorAction SilentlyContinue -ErrorVariable error
+    Process {
+        foreach ($pc in $ComputerName) {
+            $version = Invoke-Command -ComputerName $pc -ScriptBlock { $PSVersionTable.PSVersion } -ErrorAction SilentlyContinue -ErrorVariable error
             return $version
         }
     }
-    End{
+    End {
         
     }
 }
 
-#Displays PS version with some colors involved
-function global:Show-PowerShellVersion{
+<#
+.SYNOPSIS
+    Displays PS version with some colors involved
+.DESCRIPTION
+    Mainly needed to find what Powershell version a win7 machine is using so you can install the needed updates for ps5.1 later.
+.EXAMPLE
+    PS C:\> Show-PowerShellVersion -ComputerName $pc
+.INPUTS
+    Takes a list of computer names
+.OUTPUTS
+    Returns a list of computers and their powershell versions.
+.NOTES
+#>
+function global:Show-PowerShellVersion {
     [CmdletBinding()]
     param(
         [string[]]$ComputerName = $env:COMPUTERNAME
     )
     
-    Begin{
+    Begin {
 
     }
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             $version = Get-PowerShellVersion -ComputerName $pc
             Write-Host "$pc : " -NoNewline
             #Write-Verbose $version
-            if($null -eq $version){
+            if ($null -eq $version) {
                 Write-Host 
             }
-            else{
-                switch -Wildcard ($version){
+            else {
+                switch -Wildcard ($version) {
                     "2.0*" {
                         Write-Host $version -ForegroundColor Red
                         break
@@ -51,23 +63,14 @@ function global:Show-PowerShellVersion{
                     }
                 }
             }
-            <#if($version -match "2.0"){
-                Write-Host $version -ForegroundColor Red
-            }
-            elseif($version -match "5.1"){
-                Write-Host $version -ForegroundColor Green
-            }
-            else {
-                Write-Host $version -ForegroundColor Gray
-            }#>
         }
     }
-    End{
+    End {
         
     }
 }
 
-function global:Get-InstalledAppInfo{
+function global:Get-InstalledAppInfo {
     <#
         .SYNOPSIS
         
@@ -102,164 +105,48 @@ function global:Get-InstalledAppInfo{
         #svcVersion is the real version but is not presented in the older IE installations
     )
 
-    Begin{
-        if($null -eq $ComputerName -or $ComputerName -eq [string]::Empty){
+    Begin {
+        if ($null -eq $ComputerName -or $ComputerName -eq [string]::Empty) {
             $ComputerName = $env:COMPUTERNAME
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             [bool]$removePSSession = $false
 
             [string]$RegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
             [string]$RegPathWow6432Node = "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
 
-            if($null -eq $Session){
+            if ($null -eq $Session) {
                 $Session = New-PSSession -ComputerName $pc -ErrorAction Stop
                 $removePSSession = $true
             }
 
             $AppInfo = $null
 
-            if($ViaRegistry){
-                $AppInfo = Invoke-Command -Session $Session -ScriptBlock {$l1 = (Get-ChildItem $using:RegPath <#| Get-ItemProperty | Where-Object {$_.DisplayName -match $using:Name}#>) 
+            if ($ViaRegistry) {
+                $AppInfo = Invoke-Command -Session $Session -ScriptBlock { $l1 = (Get-ChildItem $using:RegPath <#| Get-ItemProperty | Where-Object {$_.DisplayName -match $using:Name}#>) 
                     $l2 = (Get-ChildItem $using:RegPathWow6432Node <#| Get-ItemProperty | Where-Object {$_.DisplayName -match $using:Name}#>)
-                    $l1 + $l2 | Get-ItemProperty | Where-Object {$_.DisplayName -match $using:Name} | Sort-Object DisplayName
+                    $l1 + $l2 | Get-ItemProperty | Where-Object { $_.DisplayName -match $using:Name } | Sort-Object DisplayName
                 }
             }
-            else{
-                $AppInfo = Invoke-Command -Session $Session -ScriptBlock {Get-Package | Where-Object {$_.name -match $using:Name}}
+            else {
+                $AppInfo = Invoke-Command -Session $Session -ScriptBlock { Get-Package | Where-Object { $_.name -match $using:Name } }
             }
 
-            if($removePSSession){
+            if ($removePSSession) {
                 $session | Remove-PSSession
             }
 
             return $AppInfo
         }
     }
-    End{
+    End {
         
     }
 }
 
-function global:Uninstall-App{ #hueta
-    <#
-        .SYNOPSIS
-        Uninstalls the selected application from the specified list of computers.
-        
-        .EXAMPLE
-        Uninstall-App -ComputerName "Name1" -AppName "winrar" -UsingMsiexec
-        Uninstalls WinRar from the specified computer.
-
-        .EXAMPLE
-        Uninstall-App -ComputerName "Name1" -AppName "winrar" -UsingMsiexec -AsJob
-        Creates a job that does the job in background process.
-
-        .DESCRIPTION
-        Finds and uninstalls the first program that matches the specified AppName. At least, it tries to do so...
-
-        .INPUTS
-        Takes a list of computer names.
-
-        .OUTPUTS
-        Returns nothing or a job object.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(ValueFromPipeline = $true)]
-        [string[]]$ComputerName,
-        [Parameter(Mandatory = $true)]
-        [Alias("App", "Program", "AppInfo")]
-        [string]$AppName,
-        [switch]$UsingMsiexec,
-        [switch]$AsJob
-    )
-    
-    Begin{
-        [scriptblock]$jobScriptblock = {
-            param(
-                [Parameter(Mandatory = $true)]
-                [psobject]$metaD
-            )
-            $uninstallationResult
-
-            $session = New-PSSession -ComputerName $metaD.ComputerName -ErrorVariable sessionError
-            if($sessionError){
-                Write-Host "$($metaD.ComputerName) - PSSession error. Finishing the execution of the script..." -ForegroundColor Red
-                continue
-            }
-
-            while((Invoke-Command -Session $session -ScriptBlock {(Get-Process).Name} -ErrorAction Stop) -contains "msiexec"){
-                Write-Verbose "$(get-date) -- Waiting for another msiexec process to stop..."
-                Start-Sleep -Seconds 60
-            }
-
-            if($metaD.UsingMsiexec){
-                $appInfo = Get-InstalledAppInfo -Session $session -Name $metaD.AppName -ViaRegistry | Select-Object -First 1
-                if($null -eq $appInfo -or $appInfo.length -eq 0){
-                    continue
-                }
-                Invoke-Command -Session $session -ScriptBlock {Start-Process msiexec.exe -ArgumentList "/x$($args[0].PSChildName) /quiet" -Wait} -ArgumentList $appInfo -WarningAction SilentlyContinue
-            }
-            else{
-                $appInfo = Get-InstalledAppInfo -Session $session -Name $metaD.AppName
-                if($null -eq $appInfo -or $appInfo.length -eq 0){
-                    continue
-                }
-                $uninstallationResult = Invoke-Command -Session $session -ScriptBlock {Get-Package $($args[0].Name) | Uninstall-Package -Force} -ArgumentList $appInfo -WarningAction SilentlyContinue
-            }
-
-            $session | Remove-PSSession
-
-            $result = [PSCustomObject]@{
-                PSTypeName = 'UninstallationInfoObject'
-                ComputerName = $metaD.ComputerName
-                Name = $uninstallationResult.Name
-                Version = $uninstallationResult.Version
-                Status = $uninstallationResult.Status
-            }
-
-            return $result
-        }
-    }
-    Process{
-        foreach($pc in $ComputerName){
-            $metadata = New-Object psobject -Property @{
-                ComputerName = $pc;
-                AppName = $AppName;
-                UsingMsiexec = $UsingMsiexec;
-            }
-
-            if($AsJob){
-                $job = Start-Job -Name "UnInst$pc" -ScriptBlock $jobScriptblock -InitializationScript {Import-Module InstallationStuff} -ArgumentList $metadata
-                return $job
-            }
-            else{
-                Invoke-Command -ScriptBlock $jobScriptblock -ArgumentList $metadata
-                <#
-                $session = New-PSSession -ComputerName $pc
-                while((Invoke-Command -Session $session -ScriptBlock {(Get-Process).Name} -ErrorAction Stop) -contains "msiexec"){
-                    Write-Verbose "$(get-date) -- Waiting for another msiexec process to stop..."
-                    Start-Sleep -Seconds 60
-                }
-                if($UsingMsiexec){
-                    $appInfo = Get-InstalledAppInfo -Session $session -Name $AppName -ViaRegistry | Select-Object -First 1
-                    Invoke-Command -Session $session -ScriptBlock {Start-Process msiexec.exe -ArgumentList "/x$($($using:appInfo).PSChildName) /quiet" -Wait}
-                }
-                else{
-                    $appInfo = Get-InstalledAppInfo -Session $session -Name $AppName
-                    Write-Verbose "App name - $($appInfo.Name)"
-                    Invoke-Command -Session $session -ScriptBlock {Uninstall-Package $($using:appInfo).Name -Force} -Verbose
-                }
-                $session | Remove-PSSession
-                #>
-            }
-        }
-    }
-}
-
-function global:Install-App{
+function global:Install-App {
     <#
         .SYNOPSIS
         Copies the specified MSI file to the specified computers and executes its installation.
@@ -301,7 +188,7 @@ function global:Install-App{
         #[switch]$Legacy,
     )
     
-    Begin{
+    Begin {
         #$installerName = $FilePath.Substring($FilePath.LastIndexOf('\') + 1)
 
         [scriptblock]$sb = {
@@ -312,85 +199,85 @@ function global:Install-App{
 
             $session = New-PSSession -ComputerName $metaD.ComputerName -ErrorVariable sessionError
             
-            if($sessionError){
+            if ($sessionError) {
                 Write-Host "$($metaD.ComputerName) - PSSession error. Finishing the execution of the script..." -ForegroundColor Red
                 continue
             }
 
-            $folderName = Invoke-Command -Session $session -ScriptBlock {New-TemporaryFile}
+            $folderName = Invoke-Command -Session $session -ScriptBlock { New-TemporaryFile }
             Write-Verbose "folder name: $($folderName.BaseName)"
-            Write-Verbose "unsupported file path: \\$($metaD.ComputerName)\admin$\temp\"
             $tempFolderUNC = New-Item -Path "\\$($metaD.ComputerName)\admin$\temp\" -Name $folderName.BaseName -ItemType Directory -Force
             Write-Verbose "Created directory $($tempFolderUNC.FullName)"
 
             $packageLocalPath = "C:\windows\Temp\" + $tempFolderUNC.Name + "\" + $metaD.PackageName
             Write-Verbose -Message "Copying from `"$($metaD.FilePath)`" to `"$($tempFolderUNC.FullName)`""
             Copy-Item $metaD.FilePath -Destination $tempFolderUNC.FullName -Force
-            #is this the place?
-            while((Invoke-Command -Session $session -ScriptBlock {(Get-Process).Name}) -contains "msiexec"){
+            
+            #wait until there's no processes called msiexec on the target machine
+            while ((Invoke-Command -Session $session -ScriptBlock { (Get-Process).Name }) -contains "msiexec") {
                 Write-Information "$(get-date) -- Waiting for another msiexec process to stop..."
                 Start-Sleep -Seconds 60
             }
-            $installationResult = Invoke-Command -Session $session -ScriptBlock {Install-Package $args[0] -Force} -ErrorVariable myErrorVar -ArgumentList $packageLocalPath
+            $installationResult = Invoke-Command -Session $session -ScriptBlock { Install-Package $args[0] -Force } -ErrorVariable myErrorVar -ArgumentList $packageLocalPath
 
             #
-                if($metaD.Notification){
-                    Invoke-Command -Session $session -ScriptBlock {cmd /c msg * /time:1000 "Установка $($args[0]) завершена."} -ArgumentList $metaD.AppName
-                }
-                if($metaD.Cleanup){
-                    Start-Sleep -Seconds 30
-                    Remove-Item $tempFolderUNC -Force -Recurse
-                }
+            if ($metaD.Notification) {
+                Invoke-Command -Session $session -ScriptBlock { cmd /c msg * /time:1000 "Установка $($args[0]) завершена." } -ArgumentList $metaD.AppName
+            }
+            if ($metaD.Cleanup) {
+                Start-Sleep -Seconds 30
+                Remove-Item $tempFolderUNC -Force -Recurse
+            }
             #
 
             $session | Remove-PSSession
 
             $result = [PSCustomObject]@{
-                PSTypeName = 'InstallationInfoObject'
+                PSTypeName   = 'InstallationInfoObject'
                 ComputerName = $metaD.ComputerName
-                Name = $installationResult.Name
-                Version = $installationResult.Version
-                Status = $installationResult.Status
+                Name         = $installationResult.Name
+                Version      = $installationResult.Version
+                Status       = $installationResult.Status
             }
 
             return $result
         }
     }
 
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             $metaData = New-Object psobject -Property @{
                 ComputerName = $pc;
-                PackageName = $FilePath.Substring($FilePath.LastIndexOf('\') + 1);
-                AppName = (Get-MSIFileInfo -Path $FilePath).ProductName;
-                AppVersion = (Get-MSIFileInfo -Path $FilePath).ProductVersion;
+                PackageName  = $FilePath.Substring($FilePath.LastIndexOf('\') + 1);
+                AppName      = (Get-MSIFileInfo -Path $FilePath).ProductName;
+                AppVersion   = (Get-MSIFileInfo -Path $FilePath).ProductVersion;
                 #ServiceFolderUNC = "\\$pc\" + $ServiceFolder.Replace(':', '$');
-                FilePath = $FilePath;
+                FilePath     = $FilePath;
                 #PackageLocalPath = "C:\windows\temp\" + $FilePath.Substring($FilePath.LastIndexOf('\') + 1);
                 #PackageEndPath = "\\$pc\" + $ServiceFolder.Replace(':', '$') + $FilePath.Substring($FilePath.LastIndexOf('\') + 1);
-                Cleanup = $Cleanup;
+                Cleanup      = $Cleanup;
                 Notification = $Notification;
             }
             
             Write-Verbose $metaData
 
-            if($AsJob){
+            if ($AsJob) {
                 Write-Verbose "Copying and installing the package..."
-                Start-Job -ScriptBlock $sb -ArgumentList $metaData -InitializationScript {Import-Module InstallationStuff} #$($metaData.ServiceFolderLocalPath), $($metaData.ServiceFolderUNC), $FilePath, $($metaData.PackageName), $ComputerName
+                Start-Job -ScriptBlock $sb -ArgumentList $metaData -InitializationScript { Import-Module InstallationStuff } #$($metaData.ServiceFolderLocalPath), $($metaData.ServiceFolderUNC), $FilePath, $($metaData.PackageName), $ComputerName
             }
-            else{
+            else {
                 Write-Verbose "Copying and installing the package..."
                 Invoke-Command -ScriptBlock $sb -ArgumentList $metaData
                 Write-Verbose "Finished with the installation."
             }
         }
     }
-    End{
+    End {
 
     }
 }
 
-function global:New-ServiceFolder{
+function global:New-ServiceFolder {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline = $true)]
@@ -399,39 +286,39 @@ function global:New-ServiceFolder{
         [string]$FolderName = "ServiceFolder"
     )
 
-    Begin{
-        if($null -eq $ComputerName -or $ComputerName -eq [string]::Empty){
+    Begin {
+        if ($null -eq $ComputerName -or $ComputerName -eq [string]::Empty) {
             $ComputerName = $env:COMPUTERNAME
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             $UNCpath = "\\$pc\" + ("$($Path.Replace(':', '$'))\$FolderName").Replace("\\", '\')
 
-            if((Test-Path $UNCpath) -and (Get-Item $UNCpath -Force | Select-Object Attributes) -match "Directory"){
+            if ((Test-Path $UNCpath) -and (Get-Item $UNCpath -Force | Select-Object Attributes) -match "Directory") {
                 Write-Information "The service folder already exists."
             }
-            elseif(-not (Test-Path $UNCpath)){
+            elseif (-not (Test-Path $UNCpath)) {
                 $f = New-Item -Path \\$pc\$($Path.Replace(':', '$')) -Name $FolderName -ItemType Directory | Set-ItemProperty -Name Attributes -Value "System, Hidden"
                 return $f
             }
-            elseif((Test-Path $UNCpath) -and (Get-Item $UNCpath -Force | Select-Object Attributes) -notmatch "Directory"){
+            elseif ((Test-Path $UNCpath) -and (Get-Item $UNCpath -Force | Select-Object Attributes) -notmatch "Directory") {
                 Remove-Item $UNCpath -Force
                 $f = New-Item -Path \\$pc\$($Path.Replace(':', '$')) -Name $FolderName -ItemType Directory | Set-ItemProperty -Name Attributes -Value "System, Hidden"
                 return $f
             }
-            else{
+            else {
                 Write-Verbose "$ComputerName - Something weird happened during creation of the service folder."
                 return 1
             }
         }
     }
-    End{
+    End {
 
     }
 }
 
-function global:Get-MSIFileInfo{
+function global:Get-MSIFileInfo {
     <#
         .SYNOPSIS
         Gets information about the specified MSI file.
@@ -465,17 +352,17 @@ function global:Get-MSIFileInfo{
             $props = @("ProductCode", "ProductVersion", "ProductName", "Manufacturer", "ProductLanguage", "FullVersion")
             $msiInfo = New-Object psobject
 
-            foreach($prop in $props){
+            foreach ($prop in $props) {
                 #$Value
                 #Write-Verbose $prop
                 $Query = "SELECT Value FROM Property WHERE Property = '$prop'"
                 $View = $MSIDatabase.GetType().InvokeMember("OpenView", "InvokeMethod", $null, $MSIDatabase, ($Query))
                 $View.GetType().InvokeMember("Execute", "InvokeMethod", $null, $View, $null)
                 $Record = $View.GetType().InvokeMember("Fetch", "InvokeMethod", $null, $View, $null)
-                if($null -ne $Record){
+                if ($null -ne $Record) {
                     $Value = $Record.GetType().InvokeMember("StringData", "GetProperty", $null, $Record, 1)
                 }
-                else{
+                else {
                     $Value = $null
                 }
                 $msiInfo | Add-Member -MemberType NoteProperty -Name $prop -Value $Value
@@ -503,18 +390,15 @@ function global:Get-MSIFileInfo{
 
 <#
 .SYNOPSIS
-    Short description
+    Similar to Install-App advanced function from this module but a bit more neat and flexible.
 .DESCRIPTION
-    Long description
+    Deploys a selected package, whether it's a single .msi file or a whole directory with an executable and dependencies.
 .EXAMPLE
-    PS C:\> <example usage>
-    Explanation of what the example does
+    PS C:\> Deploy-Package -ComputerName $pc -PackagePath $packagePath -Arguments "/qn" -CopyWithFolder -Cleanup
+    Copies the file as well as the whole directory it's located in and then executes the file with the given arguments.
 .INPUTS
-    Inputs (if any)
 .OUTPUTS
-    Output (if any)
 .NOTES
-    General notes
 #>
 function global:Deploy-Package {
     [CmdletBinding()]
@@ -541,18 +425,18 @@ function global:Deploy-Package {
 
             $session = New-PSSession -ComputerName $metadata.ComputerName -ErrorVariable sessionError
             
-            if($sessionError){
+            if ($sessionError) {
                 continue;
             }
 
-            $tempFile = Invoke-Command -Session $session -ScriptBlock {New-TemporaryFile}
+            $tempFile = Invoke-Command -Session $session -ScriptBlock { New-TemporaryFile }
             $destinationPath = New-Item -Path "\\$($PSSession.ComputerName)\admin$\temp" -Name $tempFile.BaseName -ItemType Directory
 
             $PackagePath = Get-Item $metadata.PackagePath
-            if($metadata.CopyWithFolder){
+            if ($metadata.CopyWithFolder) {
                 Copy-Item -Path $PackagePath.DirectoryName -Destination $destinationPath -Recurse -Force
             }
-            else{
+            else {
                 Copy-Item -Path $PackagePath -Destination $destinationPath -Force
             }
 
@@ -566,12 +450,12 @@ function global:Deploy-Package {
                     Start-Process -FilePath msiexec.exe -ArgumentList "/i $($args[0]) /q" -Wait -NoNewWindow
                 }
             }
-            elseif($metadata.Arguments -eq [string]::Empty -and $PackagePath.Extension -eq ".msi"){
+            elseif ($metadata.Arguments -eq [string]::Empty -and $PackagePath.Extension -eq ".msi") {
                 $toExecute = {
                     Install-Package $($args[0]) -Force
                 }
             }
-            else{
+            else {
                 $toExecute = {
                     Start-Process -FilePath $($args[0]) -ArgumentList $($args[1]) -Wait -NoNewWindow
                 }
@@ -587,18 +471,18 @@ function global:Deploy-Package {
     }
     
     process {
-        foreach($pc in $ComputerName){
+        foreach ($pc in $ComputerName) {
             $meta = [PSCustomObject]@{
-                ComputerName = $pc
-                PackagePath = $PackagePath
-                Arguments = $Arguments
-                Legacy = $Legacy
+                ComputerName   = $pc
+                PackagePath    = $PackagePath
+                Arguments      = $Arguments
+                Legacy         = $Legacy
                 CopyWithFolder = $CopyWithFolder
             }
-            if($AsJob){
+            if ($AsJob) {
                 Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $meta
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $jobScriptBlock -ArgumentList $meta
             }
         }
@@ -614,18 +498,8 @@ function global:CreateTempFolder {
         [System.Management.Automation.Runspaces.PSSession]$PSSession
     )
     Write-Verbose "Creating a folder on $($PSSession.ComputerName)"
-    $tempFile = Invoke-Command -Session $PSSession -ScriptBlock {New-TemporaryFile}
+    $tempFile = Invoke-Command -Session $PSSession -ScriptBlock { New-TemporaryFile }
     $destinationPath = New-Item -Path "\\$($PSSession.ComputerName)\admin$\temp" -Name $tempFile.BaseName -ItemType Directory
     Write-Verbose "Folder name is $($destinationPath.BaseName)"
     Write-Output $destinationPath
-}
-
-function GetTempFolderName{
-    param(
-        [string]$FilePath
-    )
-
-    $hash = Get-FileHash -Path $FilePath -Algorithm MD5
-
-    return "install-$($hash)"
 }

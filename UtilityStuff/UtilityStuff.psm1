@@ -1,11 +1,24 @@
-﻿function global:Send-WOLPacket{
+﻿<#
+.SYNOPSIS
+    Sends a WOL packet.
+.DESCRIPTION
+    Sends a Wake-On-LAN packet that wakes up the target machine if it's configured properly. Can't send WOL packets to other VLANs.
+.EXAMPLE
+    PS C:\> Send-WOLPacket -MACAddress 00:11:22:AA:BB:CC
+    Sends a WOL packet to the given MAC address.
+.INPUTS
+    Takes a list of MAC addresses.
+.OUTPUTS
+.NOTES
+#>
+function global:Send-WOLPacket {
     param(
         [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
         #[Alias("MAC", "MACAddress")]
         [string[]]$MACAddress
     )
 
-    Begin{
+    Begin {
         $MACAddressRegex = "([0-9a-fA-F]{2}:){5}([0-9a-fA-F]{2})"
 
         [scriptblock]$jobBlock = {
@@ -14,8 +27,8 @@
                 [psobject]$metaD
             )
 
-            [Byte[]]$macBytes = $metaD.MAC -split "[:-]" | ForEach-Object -Process {[Byte]"0x$_"}
-            [Byte[]]$WOLPacket = (,0xFF * 6) + ($macBytes * 16)
+            [Byte[]]$macBytes = $metaD.MAC -split "[:-]" | ForEach-Object -Process { [Byte]"0x$_" }
+            [Byte[]]$WOLPacket = (, 0xFF * 6) + ($macBytes * 16)
 
             $udpClient = New-Object System.Net.Sockets.UdpClient
             $udpClient.Connect([System.Net.IPAddress]::Broadcast, 7)
@@ -24,9 +37,9 @@
             $udpClient.Dispose()
         }
     }
-    Process{
-        foreach($mac in $MACAddress){
-            if($mac -notmatch $MACAddressRegex){
+    Process {
+        foreach ($mac in $MACAddress) {
+            if ($mac -notmatch $MACAddressRegex) {
                 Write-Error -Message "The specified MAC address is not valid." -Category InvalidArgument -RecommendedAction "Make sure you provide the right MAC address (AB:CD:EF:12:34:56)"
                 continue
             }
@@ -37,12 +50,12 @@
             Invoke-Command $jobBlock -ArgumentList $metadata -Verbose
         }
     }
-    End{
+    End {
 
     }
 }
 
-function global:Set-AUSettings{
+function global:Set-AUSettings {
     
     <#
         .SYNOPSIS
@@ -89,7 +102,7 @@ function global:Set-AUSettings{
         [switch]$AsJob
     )
 
-    Begin{
+    Begin {
         [scriptblock]$AUsb = {
             param(
                 [string]$ComputerName,
@@ -100,35 +113,35 @@ function global:Set-AUSettings{
             )
 
             $session = New-PSSession -ComputerName $ComputerName -ErrorVariable sessionError
-            if($sessionError){
-               Write-Host "Error establishing the connection to the specified PC. $ComputerName" -ForegroundColor Red
-               continue 
+            if ($sessionError) {
+                Write-Host "Error establishing the connection to the specified PC. $ComputerName" -ForegroundColor Red
+                continue 
             }
 
-            Invoke-Command -Session $session -ScriptBlock {Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name NoAutoUpdate -Value $using:NoAutoUpdate -Force}
-            Invoke-Command -Session $session -ScriptBlock {Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name AUOptions -Value $using:AUOptions -Force}
-            Invoke-Command -Session $session -ScriptBlock {Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name ScheduledInstallDay -Value $using:ScheduledInstallDay -Force}
-            Invoke-Command -Session $session -ScriptBlock {Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name ScheduledInstallTime -Value $using:ScheduledInstallTime -Force}
+            Invoke-Command -Session $session -ScriptBlock { Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name NoAutoUpdate -Value $using:NoAutoUpdate -Force }
+            Invoke-Command -Session $session -ScriptBlock { Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name AUOptions -Value $using:AUOptions -Force }
+            Invoke-Command -Session $session -ScriptBlock { Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name ScheduledInstallDay -Value $using:ScheduledInstallDay -Force }
+            Invoke-Command -Session $session -ScriptBlock { Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -Name ScheduledInstallTime -Value $using:ScheduledInstallTime -Force }
 
             $session | Remove-PSSession
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
-            if($AsJob){
+    Process {
+        foreach ($pc in $ComputerName) {
+            if ($AsJob) {
                 Start-Job -ScriptBlock $AUsb -ArgumentList $pc, $NoAutoUpdate, $AUOptions, $ScheduledInstallDay, $ScheduledInstallTime
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $AUsb -ArgumentList $pc, $NoAutoUpdate, $AUOptions, $ScheduledInstallDay, $ScheduledInstallTime
             }
         }
     }
-    End{
+    End {
         
     }
 }
 
-function global:Add-SharedPrinter{
+function global:Add-SharedPrinter {
     param(
         [Parameter(Mandatory = $true)]
         [string[]]$PrinterName,
@@ -143,53 +156,53 @@ function global:Add-SharedPrinter{
         [switch]$AsJob
     )
 
-    Begin{
+    Begin {
         [scriptblock]$printerViaRunDLL = {
             param(
                 [Parameter(Mandatory = $true)]
                 [psobject]$metaD
             )
             $session = New-PSSession -ComputerName $metaD.ComputerName -ErrorVariable sessionError
-            if($sessionError){
+            if ($sessionError) {
                 continue
             }
 
-            if($metaD.Default){
-                Invoke-Command -Session $session -ScriptBlock {Rundll32 printui.dll PrintUIEntry /ga /n$($args[0]) /z /y} -ArgumentList $metaD.PrinterName
+            if ($metaD.Default) {
+                Invoke-Command -Session $session -ScriptBlock { Rundll32 printui.dll PrintUIEntry /ga /n$($args[0]) /z /y } -ArgumentList $metaD.PrinterName
             }
-            else{
-                Invoke-Command -Session $session -ScriptBlock {Rundll32 printui.dll PrintUIEntry /ga /n$($args[0]) /z} -ArgumentList $metaD.PrinterName
+            else {
+                Invoke-Command -Session $session -ScriptBlock { Rundll32 printui.dll PrintUIEntry /ga /n$($args[0]) /z } -ArgumentList $metaD.PrinterName
             }
 
             $session | Remove-PSSession
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
-            foreach($printer in $PrinterName){
+    Process {
+        foreach ($pc in $ComputerName) {
+            foreach ($printer in $PrinterName) {
                 $metadata = New-Object psobject -Property @{
                     ComputerName = $pc
-                    PrinterName = $printer
-                    DriverPath = $DriverPath
-                    Name = $Name
-                    Default = $SetAsDefault
+                    PrinterName  = $printer
+                    DriverPath   = $DriverPath
+                    Name         = $Name
+                    Default      = $SetAsDefault
                 }
 
-                if($AsJob){
+                if ($AsJob) {
                     Start-Job -ScriptBlock $printerViaRunDLL -ArgumentList $metadata 
                 }
-                else{
+                else {
                     Invoke-Command -ScriptBlock $printerViaRunDLL -ArgumentList $metadata
                 }
             }
         }
     }
-    End{
+    End {
         
     }
 }
 
-function global:Set-IPAddress{
+function global:Set-IPAddress {
     #need to set the static IP address first and then specify the gateway address, otherwise the gateway gets erased
     #also, it's not needed to renew the ciminstance after setting the static IP (for some weird reason)
     [cmdletbinding(DefaultParameterSetName = "Normal")]
@@ -211,7 +224,7 @@ function global:Set-IPAddress{
         [Parameter(ParameterSetName = "Reset")]
         [switch]$ForceReset
     )
-    Begin{
+    Begin {
         [scriptblock]$staticSB = {
             param(
                 [string]$compName,
@@ -222,11 +235,11 @@ function global:Set-IPAddress{
             $paddingLength = 50
 
             $networkAdapter = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -ComputerName $compName -Filter "IPEnabled = $true" -ErrorVariable cimInstanceError
-            if($cimInstanceError){
+            if ($cimInstanceError) {
                 Write-Host "Couldn't retreive the specified CimInstance object." -ForegroundColor Red
                 continue
             }
-            if($reset){
+            if ($reset) {
                 Write-Host "resetting the network adapter" -ForegroundColor Cyan
                 $networkAdapter | Invoke-CimMethod -MethodName EnableDHCP -WarningAction SilentlyContinue | Out-Null
                 #need to flush dns in order for your computer to be able to access the target computer using the new address
@@ -238,16 +251,16 @@ function global:Set-IPAddress{
             Write-Information "Current IP of $compName - $($networkAdapter.IPAddress)"
             
             Write-Host "Setting the DNS servers".PadRight($paddingLength, '.') -NoNewline -ForegroundColor Cyan
-            $networkAdapter | Invoke-CimMethod -MethodName SetDNSServerSearchOrder -Arguments @{DNSServerSearchOrder = @("10.139.127.130", "10.139.206.16")}
+            $networkAdapter | Invoke-CimMethod -MethodName SetDNSServerSearchOrder -Arguments @{DNSServerSearchOrder = @("10.139.127.130", "10.139.206.16") }
             Write-Host "Done." -ForegroundColor Green
             Write-Host "Setting the IP address to `"$ip`"".PadRight($paddingLength, '.') -NoNewline -ForegroundColor Cyan
-            $networkAdapter | Invoke-CimMethod -MethodName EnableStatic -Arguments @{IPAddress = @($ip); SubnetMask = @("255.255.255.128")} -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+            $networkAdapter | Invoke-CimMethod -MethodName EnableStatic -Arguments @{IPAddress = @($ip); SubnetMask = @("255.255.255.128") } -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
             Write-Host "Done." -ForegroundColor Green
             
             ipconfig.exe /flushdns
 
             Write-Host "Setting the gateway to `"$gateway`"".PadRight($paddingLength, '.') -NoNewline -ForegroundColor Cyan
-            $networkAdapter | Invoke-CimMethod -MethodName SetGateways -Arguments @{DefaultIPGateway = @($gateway)}
+            $networkAdapter | Invoke-CimMethod -MethodName SetGateways -Arguments @{DefaultIPGateway = @($gateway) }
             Write-Host "Done." -ForegroundColor Green
 
             #$gatewayResult.ReturnValue
@@ -261,7 +274,7 @@ function global:Set-IPAddress{
             )
 
             $networkAdapter = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -ComputerName $compName -Filter "IPEnabled = $true" -ErrorVariable cimInstanceError
-            if($cimInstanceError){
+            if ($cimInstanceError) {
                 Write-Host "Couldn't retreive the specified CimInstance object." -ForegroundColor Red
                 continue
             }
@@ -270,31 +283,31 @@ function global:Set-IPAddress{
             ipconfig.exe /flushdns
         }
     }
-    Process{
+    Process {
         Write-Information "$ComputerName : $IPAddress : $DefaultGateway"
-        if($AsJob){
-            if($EnableDHCP){
+        if ($AsJob) {
+            if ($EnableDHCP) {
                 Start-Job -ScriptBlock $dhcpSB -ArgumentList $ComputerName
             }
-            else{
+            else {
                 Start-Job -ScriptBlock $staticSB -ArgumentList $ComputerName, $IPAddress, $DefaultGateway, $ForceReset
             }
         }
-        else{
-            if($EnableDHCP){
+        else {
+            if ($EnableDHCP) {
                 Invoke-Command -ScriptBlock $dhcpSB -ArgumentList $ComputerName
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $staticSB -ArgumentList $ComputerName, $IPAddress, $DefaultGateway, $ForceReset
             }
         }
     }
-    End{
+    End {
 
     }
 }
 
-function global:Get-PerformanceStatistic{
+function global:Get-PerformanceStatistic {
     param(
         [string[]]$ComputerName = $env:COMPUTERNAME,
         [Parameter(Mandatory = $true)]
@@ -303,7 +316,7 @@ function global:Get-PerformanceStatistic{
         [switch]$AsJob
     )
 
-    Begin{
+    Begin {
         [scriptblock]$performanceSB = {
             param(
                 [Parameter(Mandatory = $true)]
@@ -313,38 +326,38 @@ function global:Get-PerformanceStatistic{
             #no session? finish the execution
             $startTime = Get-Date
 
-            $initialProcesses = Invoke-Command -Session $session -ScriptBlock {Get-Process}
-            $proc = Invoke-Command -Session $session -ScriptBlock {Get-CimInstance -ClassName win32_processor}
-            $ram = Invoke-Command -Session $session -ScriptBlock {Get-CimInstance -ClassName win32_operatingsystem}
+            $initialProcesses = Invoke-Command -Session $session -ScriptBlock { Get-Process }
+            $proc = Invoke-Command -Session $session -ScriptBlock { Get-CimInstance -ClassName win32_processor }
+            $ram = Invoke-Command -Session $session -ScriptBlock { Get-CimInstance -ClassName win32_operatingsystem }
             $processesList = New-Object System.Collections.Generic.List[psobject]
 
             $avgPerformance = [PSCustomObject]@{
-                AvgCPUUsage = $proc.LoadPercentage;
+                AvgCPUUsage    = $proc.LoadPercentage;
                 #AvgFreeRAM = [Math]::Round(($ram.FreePhysicalMemory / $ram.TotalVisibleMemorySize) * 100, 2);
-                AvgRAMUsage = 100 - [Math]::Round(($ram.FreePhysicalMemory / $ram.TotalVisibleMemorySize) * 100, 2);
+                AvgRAMUsage    = 100 - [Math]::Round(($ram.FreePhysicalMemory / $ram.TotalVisibleMemorySize) * 100, 2);
                 'TotalRAM, GB' = [Math]::Round($ram.TotalVisibleMemorySize / 1mb); #weird stuff, the initial value is in kilobytes instead of bytes
             }
 
-            foreach($proc in $initialProcesses){
+            foreach ($proc in $initialProcesses) {
                 $processInfo = New-Object psobject -Property @{
-                    ProcessName = $proc.ProcessName;
-                    ID = $proc.ID;
+                    ProcessName  = $proc.ProcessName;
+                    ID           = $proc.ID;
                     WorkingSet64 = $proc.WorkingSet64;
-                    CPUUsage = [Math]::Round($proc.TotalProcessorTime.TotalSeconds,2);
-                    Description = $proc.Description;
+                    CPUUsage     = [Math]::Round($proc.TotalProcessorTime.TotalSeconds, 2);
+                    Description  = $proc.Description;
                 }
 
                 $processesList.Add($processInfo)
             }
 
-            while(((Get-Date) - $startTime).TotalSeconds -lt $metaD.TimeSpan){
+            while (((Get-Date) - $startTime).TotalSeconds -lt $metaD.TimeSpan) {
                 Start-Sleep -Milliseconds $metaD.Delay
 
-                $processes = Invoke-Command -Session $session -ScriptBlock {Get-Process | Select-Object ID, WorkingSet64, TotalProcessorTime, Description, ProcessName} -ErrorVariable connectionError
-                $proc = Invoke-Command -Session $session -ScriptBlock {Get-CimInstance -ClassName win32_processor} -ErrorVariable connectionError
-                $ram = Invoke-Command -Session $session -ScriptBlock {Get-CimInstance -ClassName win32_operatingsystem} -ErrorVariable connectionError
+                $processes = Invoke-Command -Session $session -ScriptBlock { Get-Process | Select-Object ID, WorkingSet64, TotalProcessorTime, Description, ProcessName } -ErrorVariable connectionError
+                $proc = Invoke-Command -Session $session -ScriptBlock { Get-CimInstance -ClassName win32_processor } -ErrorVariable connectionError
+                $ram = Invoke-Command -Session $session -ScriptBlock { Get-CimInstance -ClassName win32_operatingsystem } -ErrorVariable connectionError
 
-                if($connectionError){
+                if ($connectionError) {
                     continue
                 }
                 #can't connect anymore? finish the execution of the script and return the existing values
@@ -353,19 +366,19 @@ function global:Get-PerformanceStatistic{
                 #$avgPerformance.AvgFreeRAM = [Math]::Round(($avgPerformance.AvgFreeRAM + ($ram.FreePhysicalMemory / $ram.TotalVisibleMemorySize) * 100) / 2, 2)
                 $avgPerformance.AvgRAMUsage = 100 - [Math]::Round(((100 - $avgPerformance.AvgRAMUsage + $ram.FreePhysicalMemory / $ram.TotalVisibleMemorySize * 100)) / 2, 2)
 
-                foreach($proc in $processes){
-                    $reqProcess = $processesList | Where-Object {$_.ID -eq $proc.ID}
-                    if($null -ne $reqProcess){
+                foreach ($proc in $processes) {
+                    $reqProcess = $processesList | Where-Object { $_.ID -eq $proc.ID }
+                    if ($null -ne $reqProcess) {
                         $reqProcess.WorkingSet64 = ($reqProcess.WorkingSet64 + $proc.WorkingSet64) / 2
-                        $reqProcess.CPUUsage = [Math]::Round($proc.TotalProcessorTime.TotalSeconds,2);
+                        $reqProcess.CPUUsage = [Math]::Round($proc.TotalProcessorTime.TotalSeconds, 2);
                     }
-                    else{
+                    else {
                         $processInfo = New-Object psobject -Property @{
-                            ProcessName = $proc.ProcessName;
-                            ID = $proc.ID;
+                            ProcessName  = $proc.ProcessName;
+                            ID           = $proc.ID;
                             WorkingSet64 = $proc.WorkingSet64;
-                            CPUUsage = [Math]::Round($proc.TotalProcessorTime.TotalSeconds,2);
-                            Description = $proc.Description;
+                            CPUUsage     = [Math]::Round($proc.TotalProcessorTime.TotalSeconds, 2);
+                            Description  = $proc.Description;
                         }
 
                         $processesList.Add($processInfo)
@@ -383,51 +396,66 @@ function global:Get-PerformanceStatistic{
             #return ($processesList | Select-Object ID, ProcessName, CPUUsage, WorkingSet64 | Format-Table)
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             $metadata = New-Object psobject -Property @{
                 ComputerName = $pc;
-                TimeSpan = $Seconds;
-                Delay = $MillisecondsDelay;
+                TimeSpan     = $Seconds;
+                Delay        = $MillisecondsDelay;
             }
 
-            if($AsJob){
+            if ($AsJob) {
                 Start-Job -ScriptBlock $performanceSB -ArgumentList $metadata -ErrorAction SilentlyContinue
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $performanceSB -ArgumentList $metadata -ErrorAction SilentlyContinue
             }
         }
     }
-    End{
+    End {
         
     }
 }
 
-function global:Format-ProcessEvents{ #pass a Get-WinEvent entries to this cmdlet
+<#
+.SYNOPSIS
+    Formats WinEvents into a more readable fashion.
+.DESCRIPTION
+    
+.EXAMPLE
+
+.INPUTS
+    Takes a list of event entries from Get-WinEvent cmdlet.
+.OUTPUTS
+    Output (if any)
+.NOTES
+    General notes
+#>
+function global:Format-ProcessEvents {
+    #pass a Get-WinEvent entries to this cmdlet
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
         [System.Diagnostics.Eventing.Reader.EventLogRecord[]]$EventLogEntries
     )
 
-    Begin{
+    Begin {
         $scriptblock = {
             param(
                 [Parameter(Mandatory = $true)]
                 [psobject]$metaD
             )
-            $eventEntries = $metaD.events | Where-Object {$_.ID -eq 4688 -or $_.ID -eq 4689}
+            $eventEntries = $metaD.events | Where-Object { $_.ID -eq 4688 -or $_.ID -eq 4689 }
 
-            $eventEntries | ForEach-Object -Begin {$briefEventsList = @()} -Process {
+            $eventEntries | ForEach-Object -Begin { $briefEventsList = @() } -Process {
                 $processFullName = $(($_.Message -split "`r`n" | Select-String "Имя.*процесса").Line.Split(':', 2)[1].Trim())
                 $briefEventObject = New-Object pscustomobject -Property @{
-                    PSTypeName = 'windowsEventLogProcessObject'
-                    TimeCreated = $_.TimeCreated
-                    Action = $(if($_.ID -eq 4688){"Create"} elseif($_.ID -eq 4689) {"Terminate"} else {"???"})
-                    AccountName = $(($_.Message -split "`r`n" | Select-String "Имя учетной записи").Line.split(':')[1].Trim())
-                    ProcessName = $processFullName.Substring($processFullName.LastIndexOf('\') + 1)
-                    ProcessFullPath = $processFullName
+                    PSTypeName       = 'windowsEventLogProcessObject'
+                    TimeCreated      = $_.TimeCreated
+                    Action           = $(if ($_.ID -eq 4688) { "Create" } elseif ($_.ID -eq 4689) { "Terminate" } else { "???" })
+                    AccountName      = $(($_.Message -split "`r`n" | Select-String "Имя учетной записи").Line.split(':')[1].Trim())
+                    ProcessName      = $processFullName.Substring($processFullName.LastIndexOf('\') + 1)
+                    ProcessFullPath  = $processFullName
                     FullEventMessage = $_.Message
                 }
 
@@ -436,19 +464,33 @@ function global:Format-ProcessEvents{ #pass a Get-WinEvent entries to this cmdle
             return $briefEventsList
         }
     }
-    Process{
+    Process {
         $metadata = New-Object psobject -Property @{
             events = $EventLogEntries
         }
         Invoke-Command -ScriptBlock $scriptblock -ArgumentList $metadata -Verbose
     }
-    End{
+    End {
         
     }
 }
 
-function global:Install-MsuPackage{
-    #[CmdletBinding(HelpMessage = "Installs an msu (microsoft update) on a remote computer using built-in tools wusa.exe and dism.exe")]
+<#
+.SYNOPSIS
+    Deploys an .msu file (aka msupdate) to the given pc.
+.DESCRIPTION
+    Copies an msu file, unzips it, and then installs the contents on a remote computer using built-in tools wusa.exe and dism.exe
+.EXAMPLE
+    PS C:\> <example usage>
+    Explanation of what the example does
+.INPUTS
+    Inputs (if any)
+.OUTPUTS
+    Output (if any)
+.NOTES
+    General notes
+#>
+function global:Install-MsuPackage {
     PARAM(
         [Parameter(Position = 1, ValueFromPipelineByPropertyName = $True, HelpMessage = "Computers list.")]
         [Alias("PcName", "Computer")]
@@ -458,12 +500,9 @@ function global:Install-MsuPackage{
         [string]$PackagePath,
         [switch]$Log,
         [switch]$AsJob
-        #[string]$LogPath="C:\ServiceFolder\MSUpdate\",
-        #[string]$LogFile="UpdateLog.log"
     )
 
-    Begin
-    {
+    Begin {
         [scriptblock]$msuSB = {
             param(
                 [string]$ComputerName,
@@ -475,24 +514,23 @@ function global:Install-MsuPackage{
             $serviceFolder = "C:\ServiceFolder"
 
             $session = New-PSSession -ComputerName $ComputerName -ErrorVariable sessionError
-            if($sessionError){
+            if ($sessionError) {
                 Write-Host "An Error occurred during establishing PS session." -ForegroundColor Red
                 continue
             }
             $packageName = (Get-Item $PackagePath).Name
             Copy-Item -Path $PackagePath -Destination \\$ComputerName\c$\ServiceFolder
             
-            Invoke-Command -Session $session -ScriptBlock {Start-Process wusa.exe -ArgumentList "$($args[0])\$($args[1]) /extract:$($args[0])\MSUpdate\" -Wait} -ArgumentList $serviceFolder, $packageName
+            Invoke-Command -Session $session -ScriptBlock { Start-Process wusa.exe -ArgumentList "$($args[0])\$($args[1]) /extract:$($args[0])\MSUpdate\" -Wait } -ArgumentList $serviceFolder, $packageName
 
             Invoke-Command -Session $session -ScriptBlock {
-                $cabFiles = Get-ChildItem "$($args[0])\MSUpdate" | Where-Object {($_.Name -match $args[1]) -and ($_.Name -notmatch "log")}
-                foreach ($cab in $cabFiles)
-                {
+                $cabFiles = Get-ChildItem "$($args[0])\MSUpdate" | Where-Object { ($_.Name -match $args[1]) -and ($_.Name -notmatch "log") }
+                foreach ($cab in $cabFiles) {
                     Write-Verbose "cab file: $($cab.FullName)"
-                    if($args[2]){
+                    if ($args[2]) {
                         Start-Process dism.exe -ArgumentList "/online /add-package /PackagePath:$($cab.FullName) /quiet /norestart /logpath:$($cab.FullName).log /loglevel:2" -Wait -PassThru
                     }
-                    else{
+                    else {
                         Start-Process dism.exe -ArgumentList "/online /add-package /PackagePath:$($cab.FullName) /quiet /norestart" -Wait -PassThru
                     }
                 }
@@ -502,26 +540,24 @@ function global:Install-MsuPackage{
             $session | Remove-PSSession
         }
     }
-    Process
-    {
-        foreach($pc in $ComputerName){
-            if($AsJob){
+    Process {
+        foreach ($pc in $ComputerName) {
+            if ($AsJob) {
                 Start-Job -ScriptBlock $msuSB -ArgumentList $ComputerName, $PackagePath, $Log
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $msuSB -ArgumentList $ComputerName, $PackagePath, $Log
             }
         }
     }
-    End
-    {
+    End {
         
     }
 }
 
-function global:Set-ScreenSaverTimer{
+function global:Set-ScreenSaverTimer {
     [CmdletBinding(
-    DefaultParameterSetName = "ComputerName")]
+        DefaultParameterSetName = "ComputerName")]
     PARAM(
         [Parameter(Position = 0, HelpMessage = "List of computers.", ValueFromPipelineByPropertyName = $True)]
         [Alias("PCName", "computer", "pc", "comp")]
@@ -531,54 +567,52 @@ function global:Set-ScreenSaverTimer{
         [switch]$PassAfterTimer,
         [switch]$Win10
     )
-    Begin{}
-    Process{
-    <#win 10 keys for screen saver are located in
+    Begin {}
+    Process {
+        <#win 10 keys for screen saver are located in
     HKCU:\Control Panel\Desktop
     Keys:
     ScreenSaveActive
     ScreenSaverIsSecure
     ScreenSaveTimeOut
     #>
-        if($ComputerName -eq $env:COMPUTERNAME){
+        if ($ComputerName -eq $env:COMPUTERNAME) {
             $paths = Get-ChildItem -Path Registry::\Hkey_Users | 
-                Where-Object {$_.name -notmatch "class"} | 
-                Where-Object {$_.name -match "s-1-5-21"}
-                foreach($path in $paths)
-                {
-                    Write-Verbose "Checking the branch at $path"
-                    if(-not (Test-Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop")){Write-Verbose "The needed branch doesn't exist. Creating it..."
-                        New-Item -Path "Registry::\$path\software\policies\microsoft\windows" -Name "Control Panel" -ItemType String -ErrorAction SilentlyContinue
-                        New-Item -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel" -Name "Desktop" -ItemType String -ErrorAction SilentlyContinue
-                    }
-                    New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
-                    New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
-                    New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
-
-                    if($PassAfterTimer)
-                    {
-                        Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 1 #Пароль после погашения экрана. 1 - есть, 0 - нет.
-                    }
-                    else
-                    {
-                        Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Пароль после погашения экрана. 1 - есть, 0 - нет.
-                    }
-                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value $($Timer*60) #Время бездействия до погашения экрана в секундах.
-                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1    #Погашение экрана. 1 - включено.
+            Where-Object { $_.name -notmatch "class" } | 
+            Where-Object { $_.name -match "s-1-5-21" }
+            foreach ($path in $paths) {
+                Write-Verbose "Checking the branch at $path"
+                if (-not (Test-Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop")) {
+                    Write-Verbose "The needed branch doesn't exist. Creating it..."
+                    New-Item -Path "Registry::\$path\software\policies\microsoft\windows" -Name "Control Panel" -ItemType String -ErrorAction SilentlyContinue
+                    New-Item -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel" -Name "Desktop" -ItemType String -ErrorAction SilentlyContinue
                 }
-                cmd /c powercfg -change -monitor-timeout-ac $Timer #В минутах. Почему-то.
-                cmd /c powercfg -change -standby-timeout-ac 0 #Отключает время для сна.
-                Write-Verbose "Done. Timer has been set to $Timer minutes."
+                New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
+                New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
+                New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
+
+                if ($PassAfterTimer) {
+                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 1 #Пароль после погашения экрана. 1 - есть, 0 - нет.
+                }
+                else {
+                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Пароль после погашения экрана. 1 - есть, 0 - нет.
+                }
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value $($Timer * 60) #Время бездействия до погашения экрана в секундах.
+                Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1    #Погашение экрана. 1 - включено.
+            }
+            cmd /c powercfg -change -monitor-timeout-ac $Timer #В минутах. Почему-то.
+            cmd /c powercfg -change -standby-timeout-ac 0 #Отключает время для сна.
+            Write-Verbose "Done. Timer has been set to $Timer minutes."
         }
-        else{
+        else {
             Invoke-Command -ComputerName $ComputerName -ScriptBlock {
                 $paths = Get-ChildItem -Path Registry::\Hkey_Users | 
-                Where-Object {$_.name -notmatch "class"} | 
-                Where-Object {$_.name -match "s-1-5-21"}
-                foreach($path in $paths)
-                {
+                Where-Object { $_.name -notmatch "class" } | 
+                Where-Object { $_.name -match "s-1-5-21" }
+                foreach ($path in $paths) {
                     Write-Verbose "Checking the branch at $path"
-                    if(-not (Test-Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop")){Write-Verbose "The needed branch doesn't exist. Creating it..."
+                    if (-not (Test-Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop")) {
+                        Write-Verbose "The needed branch doesn't exist. Creating it..."
                         New-Item -Path "Registry::\$path\software\policies\microsoft\windows" -Name "Control Panel" -ItemType String -ErrorAction SilentlyContinue
                         New-Item -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel" -Name "Desktop" -ItemType String -ErrorAction SilentlyContinue
                     }
@@ -586,15 +620,13 @@ function global:Set-ScreenSaverTimer{
                     New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
                     New-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -PropertyType string -ErrorAction SilentlyContinue | Write-Verbose
 
-                    if($args[1])
-                    {
+                    if ($args[1]) {
                         Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 1 #Пароль после погашения экрана. 1 - есть, 0 - нет.
                     }
-                    else
-                    {
+                    else {
                         Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaverIsSecure -Value 0 #Пароль после погашения экрана. 1 - есть, 0 - нет.
                     }
-                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value $($args[0]*60) #Время бездействия до погашения экрана в секундах.
+                    Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveTimeOut -Value $($args[0] * 60) #Время бездействия до погашения экрана в секундах.
                     Set-ItemProperty -Path "Registry::\$path\software\policies\microsoft\windows\Control Panel\Desktop" -Name ScreenSaveActive -Value 1    #Погашение экрана. 1 - включено.
                 }
                 cmd /c powercfg -change -monitor-timeout-ac $args[0] #В минутах. Почему-то.
@@ -603,25 +635,25 @@ function global:Set-ScreenSaverTimer{
             Write-Verbose "Done. Timer has been set to $Timer minutes."
         }
     }
-    End{}
+    End {}
 }
 
 <#
-        .SYNOPSIS
-        
-        .EXAMPLE
+    .SYNOPSIS
+        Sets a process' priority
+    .EXAMPLE
 
-        .EXAMPLE
-        
-        .EXAMPLE
-        
-        .DESCRIPTION
+    .EXAMPLE
 
-        .INPUTS
+    .EXAMPLE
 
-        .OUTPUTS
+    .DESCRIPTION
+
+    .INPUTS
+
+    .OUTPUTS
     #>
-function Set-ProcessPriority{
+function Set-ProcessPriority {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline = $true)]
@@ -633,14 +665,14 @@ function Set-ProcessPriority{
         [string]$PriorityLevel,
         [switch]$AsJob
     )
-    Begin{
+    Begin {
         [hashtable]$priorities = @{
-            "Low" = 64;
+            "Low"         = 64;
             "BelowNormal" = 16384;
-            "Normal" = 32;
+            "Normal"      = 32;
             "AboveNormal" = 32768;
-            "High" = 128;
-            "Realtime" = 256
+            "High"        = 128;
+            "Realtime"    = 256
         }
 
         [scriptblock]$sb = {
@@ -650,28 +682,28 @@ function Set-ProcessPriority{
             )
             $cimsession = New-CimSession -ComputerName $meta.Target
             Get-CimInstance -CimSession $cimsession -ClassName Win32_Process | 
-            Where-Object {$_.Name -match $meta.Process} | 
-            ForEach-Object -Process {$_ | Invoke-CimMethod -MethodName SetPriority -Arguments @{Priority = $meta.Priority}}
+            Where-Object { $_.Name -match $meta.Process } | 
+            ForEach-Object -Process { $_ | Invoke-CimMethod -MethodName SetPriority -Arguments @{Priority = $meta.Priority } }
 
             Remove-CimSession $cimsession
         }
     }
-    Process{
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             [psobject]$metaData = @{
-                Target = $pc;
+                Target   = $pc;
                 Priority = $priorities["$PriorityLevel"];
-                Process = $ProcessName;
+                Process  = $ProcessName;
             }
-            if($AsJob){
+            if ($AsJob) {
                 Start-Job -Name "SetPrio$($pc.Substring($pc.Length - 3))" -ScriptBlock $sb -ArgumentList $metaData
             }
-            else{
+            else {
                 Invoke-Command -ScriptBlock $sb -ArgumentList $metaData
             }
         }
     }
-    End{
+    End {
 
     }
 }
@@ -686,19 +718,18 @@ function Set-ProcessPriority{
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
-function New-Link
-{
+function New-Link {
     [CmdletBinding()]
     [OutputType(Type)]
     Param
     (
-        # Param1 help description
-        [Parameter(ValueFromPipelineByPropertyName=$true,
-                   Position=0)]
+        #
+        [Parameter(ValueFromPipelineByPropertyName = $true,
+            Position = 0)]
         [string[]]
         $ComputerName,
 
-        # Param2 help description
+        #
         [string]
         $Path,
 
@@ -707,12 +738,11 @@ function New-Link
         $TargetPath
     )
 
-    Begin
-    {
+    Begin {
+        
     }
-    Process
-    {
-        foreach($pc in $ComputerName){
+    Process {
+        foreach ($pc in $ComputerName) {
             
 
             $shell = New-Object -ComObject ("WScript.Shell")
@@ -724,7 +754,7 @@ function New-Link
             $shell = $null
         }
     }
-    End
-    {
+    End {
+
     }
 }
